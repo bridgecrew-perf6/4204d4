@@ -1,0 +1,62 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+# ============================================================
+# Nom du fichier:     Vagrantfile
+# Auteur:             Alain Boudreault
+# Date:               2021.04.07
+# ------------------------------------------------------------
+# Démarrage:          vagrant up
+# Lister les VM:      vagrant global-status
+# Login via vagrant:  vagrant ssh nomDeLaMachine
+#   Pour passer en mode root: sudo -s pour passer en root
+#   Pour permettre ssh:       sudo passwd vagrant
+#
+# Login direct:       ssh vagrant@ip (password=vagrant)
+# Arrêt des VM:       vagrant halt
+# Suppression des VM: vagrant destroy    
+# ============================================================
+
+Vagrant.configure("2") do |config|
+  # master server
+  config.vm.define "k8s-master" do |kmaster|
+    kmaster.vm.box = "debian/buster64"
+    kmaster.vm.hostname = "k8s-master"
+    # Installer docker sur la VM
+    kmaster.vm.provision "docker"
+    kmaster.vm.box_url = "debian/buster64"
+    kmaster.vm.network :private_network, ip: "192.168.100.10"
+    kmaster.vm.provider :virtualbox do |v|
+      v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      v.customize ["modifyvm", :id, "--memory", 2048]
+      v.customize ["modifyvm", :id, "--name", "k8s-master"]
+      v.customize ["modifyvm", :id, "--cpus", "2"]
+    end
+    # Activation du ssh hors vagrant:    
+    config.vm.provision "shell", inline: <<-SHELL
+      sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config    
+      service ssh restart
+    SHELL
+  end
+
+  numberSrv=2
+  # slave server
+  (1..numberSrv).each do |i|
+    config.vm.define "k8s-node#{i}" do |knode|
+      knode.vm.box = "debian/buster64"
+      knode.vm.hostname = "k8s-node#{i}"
+      # Installer docker sur la VM
+      knode.vm.provision "docker"
+      knode.vm.network "private_network", ip: "192.168.100.1#{i}"
+      knode.vm.provider "virtualbox" do |v|
+        v.name = "k8s-node#{i}"
+        v.memory = 1024
+        v.cpus = 1
+      end
+      # Activation du ssh hors vagrant:
+     config.vm.provision "shell", inline: <<-SHELL
+       sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config    
+       service ssh restart
+     SHELL
+    end
+  end
+end
