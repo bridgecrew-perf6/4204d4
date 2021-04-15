@@ -5,6 +5,8 @@
 # Auteur:             Alain Boudreault
 # Date:               2021.04.07
 # -------------------------------------------------------------------------
+# M-A-J: 2021.04.15 - Ajout du routage des paquets IP et du DNS local
+# -------------------------------------------------------------------------
 # Démarrage:          vagrant up
 # Lister les VM:      vagrant global-status
 # Login via vagrant:  vagrant ssh nomDeLaMachine
@@ -16,20 +18,23 @@
 # Suppression des VM: vagrant destroy    
 # =========================================================================
 # https://raw.githubusercontent.com/ve2cuy/4204d4/main/module06/Vagrantfile
+# ---------------
+# Voici un exemple K8s complet: https://github.com/ansilh/k8s-vagrant
 # =========================================================================
 
 Vagrant.configure("2") do |config|
   # master server
   config.vm.define "k8s-master" do |kmaster|
     kmaster.vm.synced_folder '.', '/vagrant', disabled: true
-    kmaster.vm.box = "debian/buster64"
+    kmaster.vm.box = "ubuntu/focal64"
     kmaster.vm.hostname = "k8s-master"
     # Installer docker sur la VM
     kmaster.vm.provision "docker"
-    kmaster.vm.box_url = "debian/buster64"
-    kmaster.vm.network :private_network, ip: "192.168.100.10"
+    kmaster.vm.box_url = "ubuntu/focal64"
+    kmaster.vm.network :private_network, ip: "192.168.56.101"
     kmaster.vm.provider :virtualbox do |v|
       v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      v.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
       v.customize ["modifyvm", :id, "--memory", 2048]
       v.customize ["modifyvm", :id, "--name", "k8s-master"]
       v.customize ["modifyvm", :id, "--cpus", "2"]
@@ -38,6 +43,13 @@ Vagrant.configure("2") do |config|
     config.vm.provision "shell", inline: <<-SHELL
       sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config    
       service ssh restart
+      # Activer le routage des paquets IP entre les réseaux
+      echo "[SCRIPT][INFO] Activer le routage des paquets IP entre les réseaux:"
+      sysctl -w net.ipv4.ip_forward=1
+      sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
+      echo "[SCRIPT][INFO] Activer la résolution DNS pour les applications locales"
+      systemctl enable systemd-resolved.service
+      systemctl start  systemd-resolved.service
     SHELL
   end
 
@@ -46,12 +58,14 @@ Vagrant.configure("2") do |config|
   (1..numberSrv).each do |i|
     config.vm.define "k8s-node#{i}" do |knode|
       knode.vm.synced_folder '.', '/vagrant', disabled: true
-      knode.vm.box = "debian/buster64"
+      knode.vm.box = "ubuntu/focal64"
       knode.vm.hostname = "k8s-node#{i}"
       # Installer docker sur la VM
       knode.vm.provision "docker"
-      knode.vm.network "private_network", ip: "192.168.100.1#{i}"
+      knode.vm.network "private_network", ip: "192.168.56.10#{i+1}"
       knode.vm.provider "virtualbox" do |v|
+        v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+        v.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
         v.name = "k8s-node#{i}"
         v.memory = 1024
         v.cpus = 1
@@ -60,6 +74,13 @@ Vagrant.configure("2") do |config|
      config.vm.provision "shell", inline: <<-SHELL
        sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config    
        service ssh restart
+      # Activer le routage des paquets IP entre les réseaux
+      echo "[SCRIPT][INFO] Activer le routage des paquets IP entre les réseaux:"
+      sysctl -w net.ipv4.ip_forward=1
+      sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
+      echo "[SCRIPT][INFO] Activer la résolution DNS pour les applications locales"
+      systemctl enable systemd-resolved.service
+      systemctl start  systemd-resolved.service
      SHELL
     end
   end
